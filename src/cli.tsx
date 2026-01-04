@@ -333,8 +333,18 @@ export function CLI({ resumeSessionId }: CLIProps = {}) {
    */
   const handleProviderSelect = useCallback((providerId: string | null) => {
     if (providerId) {
-      setPendingProvider(providerId);
-      setState('api_key_confirm');
+      if (providerId === 'ollama') {
+        setProvider(providerId);
+        setSetting('provider', providerId);
+        const newModel = getModelIdForProvider(providerId);
+        if (newModel) {
+          messageHistoryRef.current.setModel(newModel);
+        }
+        setState('idle');
+      } else {
+        setPendingProvider(providerId);
+        setState('api_key_confirm');
+      }
     } else {
       setState('idle');
     }

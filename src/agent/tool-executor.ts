@@ -9,7 +9,7 @@ import type { Task, ToolCallStatus, Understanding } from './state.js';
 // Constants
 // ============================================================================
 
-const SMALL_MODEL = 'gpt-5-mini';
+const SMALL_MODEL = 'ollama-llama3.1';
 
 // ============================================================================
 // Tool Executor Options

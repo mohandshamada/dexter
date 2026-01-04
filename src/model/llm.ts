@@ -1,6 +1,7 @@
 import { ChatOpenAI } from '@langchain/openai';
 import { ChatAnthropic } from '@langchain/anthropic';
 import { ChatGoogleGenerativeAI } from '@langchain/google-genai';
+import { ChatOllama } from '@langchain/ollama';
 import { ChatPromptTemplate } from '@langchain/core/prompts';
 import { BaseChatModel } from '@langchain/core/language_models/chat_models';
 import { StructuredToolInterface } from '@langchain/core/tools';
@@ -9,7 +10,7 @@ import { z } from 'zod';
 import { DEFAULT_SYSTEM_PROMPT } from '../agent/prompts.js';
 
 export const DEFAULT_PROVIDER = 'openai';
-export const DEFAULT_MODEL = 'gpt-5.2';
+export const DEFAULT_MODEL = 'ollama-llama3.1';
 
 // Generic retry helper with exponential backoff
 async function withRetry<T>(fn: () => Promise<T>, maxAttempts = 3): Promise<T> {
@@ -61,15 +62,17 @@ const MODEL_PROVIDERS: Record<string, ModelFactory> = {
         baseURL: 'https://openrouter.ai/api/v1',
       },
     }),
-  'ollama-': (name, opts) =>
-    new ChatOpenAI({
-      model: name.replace('ollama-', ''), // Remove prefix for actual model name
+  'ollama-': (name, opts) => {
+    console.log('[Factory] Creating Ollama instance for:', name);
+    const rawUrl = process.env.OLLAMA_BASE_URL || 'http://localhost:11434';
+    const baseUrl = rawUrl.replace(/\/v1\/?$/, '');
+    
+    return new ChatOllama({
+      model: name.replace('ollama-', ''),
+      baseUrl,
       ...opts,
-      apiKey: 'ollama', // Ollama doesn't require a real API key
-      configuration: {
-        baseURL: process.env.OLLAMA_BASE_URL || 'http://localhost:11434/v1',
-      },
-    }),
+    }) as any;
+  },
 };
 
 const DEFAULT_MODEL_FACTORY: ModelFactory = (name, opts) =>
@@ -85,6 +88,7 @@ export function getChatModel(
 ): BaseChatModel {
   const opts: ModelOpts = { streaming };
   const prefix = Object.keys(MODEL_PROVIDERS).find((p) => modelName.startsWith(p));
+  console.log(`[getChatModel] Name: ${modelName}, Prefix: ${prefix}`);
   const factory = prefix ? MODEL_PROVIDERS[prefix] : DEFAULT_MODEL_FACTORY;
   return factory(modelName, opts);
 }

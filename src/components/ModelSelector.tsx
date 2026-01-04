@@ -13,20 +13,26 @@ const PROVIDERS: Provider[] = [
   {
     displayName: 'OpenAI',
     providerId: 'openai',
-    modelId: 'gpt-5.2',
-    description: "GPT 5.2 - OpenAI's flagship model",
+    modelId: 'gpt-4o',
+    description: "GPT-4o - OpenAI's flagship model",
   },
   {
     displayName: 'Anthropic',
     providerId: 'anthropic',
-    modelId: 'claude-sonnet-4-5',
-    description: "Sonnet 4.5 - Best for complex agents",
+    modelId: 'claude-3-5-sonnet-latest',
+    description: "Claude 3.5 Sonnet - Best for complex agents",
   },
   {
     displayName: 'Google',
     providerId: 'google',
-    modelId: 'gemini-3',
-    description: "Gemini 3 - Google's most intelligent model",
+    modelId: 'gemini-1.5-pro',
+    description: "Gemini 1.5 Pro - Google's most intelligent model",
+  },
+  {
+    displayName: 'Ollama (Local)',
+    providerId: 'ollama',
+    modelId: 'ollama-llama3.1',
+    description: "Llama 3.1 - Run locally via Ollama",
   },
 ];
 
