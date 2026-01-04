@@ -52,6 +52,24 @@ const MODEL_PROVIDERS: Record<string, ModelFactory> = {
       ...opts,
       apiKey: getApiKey('GOOGLE_API_KEY', 'Google'),
     }),
+  'openrouter-': (name, opts) =>
+    new ChatOpenAI({
+      model: name.replace('openrouter-', ''), // Remove prefix for actual model name
+      ...opts,
+      apiKey: getApiKey('OPENROUTER_API_KEY', 'OpenRouter'),
+      configuration: {
+        baseURL: 'https://openrouter.ai/api/v1',
+      },
+    }),
+  'ollama-': (name, opts) =>
+    new ChatOpenAI({
+      model: name.replace('ollama-', ''), // Remove prefix for actual model name
+      ...opts,
+      apiKey: 'ollama', // Ollama doesn't require a real API key
+      configuration: {
+        baseURL: process.env.OLLAMA_BASE_URL || 'http://localhost:11434/v1',
+      },
+    }),
 };
 
 const DEFAULT_MODEL_FACTORY: ModelFactory = (name, opts) =>

@@ -26,13 +26,15 @@ import { useApiKey } from './hooks/useApiKey.js';
 import { useAgentExecution, ToolError } from './hooks/useAgentExecution.js';
 
 import { getSetting, setSetting } from './utils/config.js';
-import { 
-  getApiKeyNameForProvider, 
-  getProviderDisplayName, 
+import {
+  getApiKeyNameForProvider,
+  getProviderDisplayName,
   checkApiKeyExistsForProvider,
-  saveApiKeyForProvider 
+  saveApiKeyForProvider
 } from './utils/env.js';
 import { MessageHistory } from './utils/message-history.js';
+import { getDatabase } from './db/index.js';
+import { getCache } from './cache/index.js';
 
 import { DEFAULT_PROVIDER } from './model/llm.js';
 import { colors } from './theme.js';
@@ -113,7 +115,11 @@ const CompletedTurnView = React.memo(function CompletedTurnView({ turn }: { turn
 // Main CLI Component
 // ============================================================================
 
-export function CLI() {
+interface CLIProps {
+  resumeSessionId?: string;
+}
+
+export function CLI({ resumeSessionId }: CLIProps = {}) {
   const { exit } = useApp();
 
   const [state, setState] = useState<AppState>('idle');
@@ -152,6 +158,45 @@ export function CLI() {
       currentTasksRef.current = [...currentTurn.state.tasks];
     }
   }, [answerStream, currentTurn]);
+
+  // Load session data on mount if resumeSessionId is provided
+  useEffect(() => {
+    if (resumeSessionId) {
+      try {
+        const db = getDatabase();
+        const session = db.getSession(resumeSessionId);
+
+        if (!session) {
+          setStatusMessage(`Session ${resumeSessionId} not found.`);
+          return;
+        }
+
+        // Load messages from the session
+        const messages = db.getSessionMessages(resumeSessionId);
+        const userMessages = messages.filter(m => m.role === 'user');
+        const assistantMessages = messages.filter(m => m.role === 'assistant');
+
+        // Display the conversation history
+        if (userMessages.length > 0 && assistantMessages.length > 0) {
+          const turns: CompletedTurn[] = [];
+          for (let i = 0; i < Math.min(userMessages.length, assistantMessages.length); i++) {
+            turns.push({
+              id: `resumed_${i}`,
+              query: userMessages[i].content,
+              tasks: [], // Tasks not stored in this format, could be reconstructed from artifacts
+              answer: assistantMessages[i].content,
+            });
+          }
+          setHistory(turns);
+          setStatusMessage(`Resumed session from ${new Date(session.created_at).toLocaleString()}. You can continue asking questions.`);
+        } else {
+          setStatusMessage(`Loaded session ${resumeSessionId} (${session.status}). Ready for new questions.`);
+        }
+      } catch (error) {
+        setStatusMessage(`Failed to load session: ${error}`);
+      }
+    }
+  }, [resumeSessionId]);
 
   /**
    * Handles the completed answer and moves current turn to history
@@ -212,6 +257,62 @@ export function CLI() {
 
       if (query === '/model') {
         setState('model_select');
+        return;
+      }
+
+      if (query === '/sessions') {
+        try {
+          const db = getDatabase();
+          const sessions = db.getAllSessions(10);
+          if (sessions.length === 0) {
+            setStatusMessage('No previous sessions found.');
+          } else {
+            const sessionList = sessions.map(s => {
+              const date = new Date(s.created_at).toLocaleString();
+              const queryPreview = s.query ? s.query.substring(0, 50) + (s.query.length > 50 ? '...' : '') : 'N/A';
+              return `  ${s.id} - ${date} [${s.status}]\n    Query: ${queryPreview}`;
+            }).join('\n');
+            setStatusMessage(`Recent sessions (use --resume <session-id> to restore):\n${sessionList}`);
+          }
+        } catch (error) {
+          setStatusMessage(`Failed to list sessions: ${error}`);
+        }
+        return;
+      }
+
+      if (query.startsWith('/cache')) {
+        try {
+          const cache = getCache();
+          const parts = query.split(' ');
+          const command = parts[1];
+
+          if (command === 'stats') {
+            const stats = cache.getStats();
+            const sizeMB = (stats.size / 1024 / 1024).toFixed(2);
+            setStatusMessage(
+              `Cache Statistics:\n` +
+              `  Total entries: ${stats.total}\n` +
+              `  Valid: ${stats.valid}\n` +
+              `  Expired: ${stats.expired}\n` +
+              `  Size: ${sizeMB} MB`
+            );
+          } else if (command === 'clear') {
+            const cleared = cache.clearAll();
+            setStatusMessage(`Cleared ${cleared} cache entries.`);
+          } else if (command === 'clean') {
+            const cleared = cache.clearExpired();
+            setStatusMessage(`Cleaned ${cleared} expired cache entries.`);
+          } else {
+            setStatusMessage(
+              'Cache commands:\n' +
+              '  /cache stats  - Show cache statistics\n' +
+              '  /cache clear  - Clear all cache entries\n' +
+              '  /cache clean  - Remove expired cache entries'
+            );
+          }
+        } catch (error) {
+          setStatusMessage(`Cache error: ${error}`);
+        }
         return;
       }
 

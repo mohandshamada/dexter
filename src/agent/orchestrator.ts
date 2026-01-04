@@ -8,9 +8,10 @@ import { ReflectPhase } from './phases/reflect.js';
 import { AnswerPhase } from './phases/answer.js';
 import { ToolExecutor } from './tool-executor.js';
 import { TaskExecutor, TaskExecutorCallbacks } from './task-executor.js';
-import type { 
-  Phase, 
-  Plan, 
+import { DatabaseService } from '../db/index.js';
+import type {
+  Phase,
+  Plan,
   Understanding,
   TaskResult,
   ToolCallStatus,
@@ -58,6 +59,8 @@ export interface AgentOptions {
   model: string;
   callbacks?: AgentCallbacks;
   maxIterations?: number;
+  db?: DatabaseService;
+  sessionId?: string;
 }
 
 // ============================================================================
@@ -83,7 +86,9 @@ export class Agent {
   private readonly callbacks: AgentCallbacks;
   private readonly contextManager: ToolContextManager;
   private readonly maxIterations: number;
-  
+  private readonly db?: DatabaseService;
+  private readonly sessionId?: string;
+
   private readonly understandPhase: UnderstandPhase;
   private readonly planPhase: PlanPhase;
   private readonly executePhase: ExecutePhase;
@@ -95,6 +100,8 @@ export class Agent {
     this.model = options.model;
     this.callbacks = options.callbacks ?? {};
     this.maxIterations = options.maxIterations ?? DEFAULT_MAX_ITERATIONS;
+    this.db = options.db;
+    this.sessionId = options.sessionId;
     this.contextManager = new ToolContextManager('.dexter/context', this.model);
 
     // Initialize phases
@@ -125,16 +132,26 @@ export class Agent {
     const taskResults: Map<string, TaskResult> = new Map();
     const completedPlans: Plan[] = [];
 
+    // Save initial query to database
+    if (this.db && this.sessionId) {
+      this.db.addMessage(this.sessionId, 'user', query);
+    }
+
     // ========================================================================
     // Phase 1: Understand (only once)
     // ========================================================================
     this.callbacks.onPhaseStart?.('understand');
-    
+
     const understanding = await this.understandPhase.run({
       query,
       conversationHistory: messageHistory,
     });
-    
+
+    // Save understanding to database as research artifact
+    if (this.db && this.sessionId) {
+      this.db.addResearchArtifact(this.sessionId, understanding, 'understand_phase');
+    }
+
     this.callbacks.onUnderstandingComplete?.(understanding);
     this.callbacks.onPhaseComplete?.('understand');
 
@@ -151,7 +168,7 @@ export class Agent {
       // Phase 2: Plan
       // ======================================================================
       this.callbacks.onPhaseStart?.('plan');
-      
+
       const plan = await this.planPhase.run({
         query,
         understanding,
@@ -159,7 +176,12 @@ export class Agent {
         priorResults: taskResults.size > 0 ? taskResults : undefined,
         guidanceFromReflection,
       });
-      
+
+      // Save plan to database
+      if (this.db && this.sessionId) {
+        this.db.addResearchArtifact(this.sessionId, plan, `plan_iteration_${iteration}`);
+      }
+
       this.callbacks.onPlanCreated?.(plan, iteration);
       this.callbacks.onPhaseComplete?.('plan');
 
@@ -194,6 +216,11 @@ export class Agent {
         iteration,
       });
 
+      // Save reflection to database
+      if (this.db && this.sessionId) {
+        this.db.addResearchArtifact(this.sessionId, reflection, `reflection_iteration_${iteration}`);
+      }
+
       this.callbacks.onReflectionComplete?.(reflection, iteration);
       this.callbacks.onPhaseComplete?.('reflect');
 
@@ -206,6 +233,15 @@ export class Agent {
       guidanceFromReflection = this.reflectPhase.buildPlanningGuidance(reflection);
 
       iteration++;
+    }
+
+    // Save all task results to database
+    if (this.db && this.sessionId) {
+      const resultsArray = Array.from(taskResults.entries()).map(([taskId, result]) => ({
+        taskId,
+        ...result,
+      }));
+      this.db.addResearchArtifact(this.sessionId, resultsArray, 'task_results');
     }
 
     // ========================================================================
@@ -222,6 +258,11 @@ export class Agent {
 
     this.callbacks.onAnswerStream?.(stream);
     this.callbacks.onPhaseComplete?.('answer');
+
+    // Update session status to completed
+    if (this.db && this.sessionId) {
+      this.db.updateSessionStatus(this.sessionId, 'completed');
+    }
 
     return '';
   }

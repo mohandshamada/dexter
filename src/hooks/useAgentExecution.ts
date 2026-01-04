@@ -1,6 +1,7 @@
 import { useState, useCallback, useRef } from 'react';
 import { Agent, AgentCallbacks } from '../agent/orchestrator.js';
 import { MessageHistory } from '../utils/message-history.js';
+import { getDatabase } from '../db/index.js';
 import { generateId } from '../cli/types.js';
 import type { Task, Phase, TaskStatus, ToolCallStatus, Plan } from '../agent/state.js';
 import type { AgentProgressState } from '../components/AgentProgressView.js';
@@ -78,8 +79,9 @@ export function useAgentExecution({
   const [toolErrors, setToolErrors] = useState<ToolError[]>([]);
 
   const currentQueryRef = useRef<string | null>(null);
+  const currentSessionIdRef = useRef<string | null>(null);
   const isProcessingRef = useRef(false);
-  
+
   // Track pending updates for race condition handling
   const pendingTaskUpdatesRef = useRef<PendingTaskUpdate[]>([]);
   const pendingToolCallUpdatesRef = useRef<PendingToolCallUpdate[]>([]);
@@ -314,12 +316,26 @@ export function useAgentExecution({
 
     // Add to message history for multi-turn context
     const query = currentQueryRef.current;
+    const sessionId = currentSessionIdRef.current;
+
     if (query && answer) {
       messageHistory.addMessage(query, answer).catch(() => {
         // Silently ignore errors in adding to history
       });
+
+      // Save final answer to database
+      if (sessionId) {
+        try {
+          const db = getDatabase();
+          db.addMessage(sessionId, 'assistant', answer);
+        } catch (error) {
+          // Silently ignore database errors
+        }
+      }
     }
+
     currentQueryRef.current = null;
+    currentSessionIdRef.current = null;
   }, [messageHistory]);
 
   /**
@@ -331,13 +347,27 @@ export function useAgentExecution({
       isProcessingRef.current = true;
       setIsProcessing(true);
 
+      // Generate session ID
+      const sessionId = `session_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+      currentSessionIdRef.current = sessionId;
+
       // Store current query for message history
       currentQueryRef.current = query;
-      
+
       // Clear any pending updates and errors from previous run
       pendingTaskUpdatesRef.current = [];
       pendingToolCallUpdatesRef.current = [];
       setToolErrors([]);
+
+      // Create database session
+      let db;
+      try {
+        db = getDatabase();
+        db.createSession(sessionId, query);
+      } catch (error) {
+        // Database is optional, continue without it
+        db = undefined;
+      }
 
       // Initialize turn state
       setCurrentTurn({
@@ -356,11 +386,20 @@ export function useAgentExecution({
       const callbacks = createAgentCallbacks();
 
       try {
-        const agent = new Agent({ model, callbacks });
+        const agent = new Agent({ model, callbacks, db, sessionId });
         await agent.run(query, messageHistory);
       } catch (e) {
+        // Mark session as error if database is available
+        if (db && sessionId) {
+          try {
+            db.updateSessionStatus(sessionId, 'error');
+          } catch (dbError) {
+            // Ignore database errors
+          }
+        }
         setCurrentTurn(null);
         currentQueryRef.current = null;
+        currentSessionIdRef.current = null;
         throw e;
       } finally {
         isProcessingRef.current = false;
