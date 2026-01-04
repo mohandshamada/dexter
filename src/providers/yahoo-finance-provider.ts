@@ -29,7 +29,7 @@ export class YahooFinanceProvider extends BaseFinancialProvider {
     try {
       const quoteSummary = await yahooFinance.quoteSummary(params.ticker, {
         modules: ['incomeStatementHistory', 'incomeStatementHistoryQuarterly'],
-      });
+      }) as any;
 
       const period = this.formatPeriod(params.period);
       const statements =
@@ -52,7 +52,7 @@ export class YahooFinanceProvider extends BaseFinancialProvider {
     try {
       const quoteSummary = await yahooFinance.quoteSummary(params.ticker, {
         modules: ['balanceSheetHistory', 'balanceSheetHistoryQuarterly'],
-      });
+      }) as any;
 
       const period = this.formatPeriod(params.period);
       const statements =
@@ -75,7 +75,7 @@ export class YahooFinanceProvider extends BaseFinancialProvider {
     try {
       const quoteSummary = await yahooFinance.quoteSummary(params.ticker, {
         modules: ['cashflowStatementHistory', 'cashflowStatementHistoryQuarterly'],
-      });
+      }) as any;
 
       const period = this.formatPeriod(params.period);
       const statements =
@@ -114,7 +114,7 @@ export class YahooFinanceProvider extends BaseFinancialProvider {
 
   async getPriceSnapshot(params: PriceParams): Promise<ProviderResponse> {
     try {
-      const quote = await yahooFinance.quote(params.ticker);
+      const quote = await yahooFinance.quote(params.ticker) as any;
 
       return {
         data: {
@@ -145,11 +145,11 @@ export class YahooFinanceProvider extends BaseFinancialProvider {
         period2: params.end_date || new Date().toISOString().split('T')[0],
       };
 
-      const history = await yahooFinance.historical(params.ticker, queryOptions);
+      const history = await yahooFinance.historical(params.ticker, queryOptions) as any[];
 
       const limited = history.slice(0, params.limit || history.length);
 
-      const prices = limited.map((h) => ({
+      const prices = limited.map((h: any) => ({
         ticker: params.ticker,
         date: h.date.toISOString().split('T')[0],
         open: h.open,
@@ -172,7 +172,7 @@ export class YahooFinanceProvider extends BaseFinancialProvider {
     try {
       const quoteSummary = await yahooFinance.quoteSummary(params.ticker, {
         modules: ['financialData', 'defaultKeyStatistics', 'summaryDetail'],
-      });
+      }) as any;
 
       const metrics = {
         pe_ratio: quoteSummary.summaryDetail?.trailingPE,
@@ -206,7 +206,7 @@ export class YahooFinanceProvider extends BaseFinancialProvider {
 
       const news = await yahooFinance.search(params.ticker, {
         newsCount: params.limit || 10,
-      });
+      }) as any;
 
       return {
         data: { news: news.news || [] },

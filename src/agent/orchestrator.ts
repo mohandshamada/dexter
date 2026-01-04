@@ -237,10 +237,7 @@ export class Agent {
 
     // Save all task results to database
     if (this.db && this.sessionId) {
-      const resultsArray = Array.from(taskResults.entries()).map(([taskId, result]) => ({
-        taskId,
-        ...result,
-      }));
+      const resultsArray = Array.from(taskResults.values());
       this.db.addResearchArtifact(this.sessionId, resultsArray, 'task_results');
     }
 
